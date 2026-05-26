@@ -7,6 +7,7 @@
   </div>
 <% end %>
 
+<!--
 <h2>プレイヤー一覧</h2>
 <ul>
   <% @players.each do |player| %>
@@ -55,3 +56,154 @@
     </tr>
   <% end %>
 </table>
+-->
+
+<h2>3Dマップビュー</h2>
+<!-- data属性を使って安全にJSONデータを渡します -->
+<canvas id="renderCanvas" 
+        style="width: 100%; height: 500px; touch-action: none;" 
+        data-squares="<%= @squares.to_json %>"
+        data-players="<%= @players.to_json %>"></canvas>
+
+<script>
+  function init3DMap() {
+    const canvas = document.getElementById("renderCanvas");
+    if (!canvas) return;
+
+    if (canvas.engine) {
+      canvas.engine.dispose();
+    }
+
+    const engine = new BABYLON.Engine(canvas, true);
+    canvas.engine = engine;
+
+    const createScene = function () {
+      const scene = new BABYLON.Scene(engine);
+      
+      const camera = new BABYLON.ArcRotateCamera("camera", -Math.PI / 2, Math.PI / 2.5, 15, BABYLON.Vector3.Zero(), scene);
+      camera.attachControl(canvas, true);
+      const light = new BABYLON.HemisphericLight("light", new BABYLON.Vector3(0, 1, 0), scene);
+
+      const squaresRaw = canvas.getAttribute("data-squares");
+      const squares = squaresRaw ? JSON.parse(squaresRaw) : [];
+
+      // マスの描画
+      squares.forEach((square, index) => {
+        const box = BABYLON.MeshBuilder.CreateBox("square_" + index, { size: 1.5 }, scene);
+        box.position.x = index * 2;
+        
+        const material = new BABYLON.StandardMaterial("mat_" + index, scene);
+        if (square.square_type === "start") {
+          material.diffuseColor = new BABYLON.Color3(0, 0, 1);
+        } else if (square.square_type === "goal") {
+          material.diffuseColor = new BABYLON.Color3(1, 0, 0);
+        } else {
+          material.diffuseColor = new BABYLON.Color3(0.8, 0.8, 0.8);
+        }
+        box.material = material;
+      });
+
+      // プレイヤーの描画
+      const playersRaw = canvas.getAttribute("data-players");
+      const players = playersRaw ? JSON.parse(playersRaw) : [];
+      
+      // プレイヤーごとの色（オレンジ、緑、紫、水色）
+      const playerColors = [
+        new BABYLON.Color3(1, 0.5, 0),
+        new BABYLON.Color3(0, 1, 0),
+        new BABYLON.Color3(1, 0, 1),
+        new BABYLON.Color3(0, 1, 1)
+      ];
+
+      players.forEach((player, index) => {
+        const sphere = BABYLON.MeshBuilder.CreateSphere("player_" + index, { diameter: 0.6 }, scene);
+        
+        // 同じマスでも重ならないようにZ軸とX軸を少しずらす
+        const offsetX = index % 2 === 0 ? -0.3 : 0.3;
+        const offsetZ = index < 2 ? -0.3 : 0.3;
+
+        // X軸は (現在地 * 2) でマスの位置に合わせる
+        sphere.position.x = (player.position * 2) + offsetX;
+        sphere.position.y = 1.05; // マス(高さ1.5)の上に乗せる
+        sphere.position.z = offsetZ;
+
+        const pMat = new BABYLON.StandardMaterial("pmat_" + index, scene);
+        pMat.diffuseColor = playerColors[index % playerColors.length];
+        sphere.material = pMat;
+      });
+
+      if (squares.length > 0) {
+         camera.setTarget(new BABYLON.Vector3(((squares.length - 1) * 2) / 2, 0, 0));
+      }
+
+      const advancedTexture = BABYLON.GUI.AdvancedDynamicTexture.CreateFullscreenUI("UI");
+
+      // 1. 各マスのテキストを3D空間のマスの上に表示
+      squares.forEach((square, index) => {
+        const box = scene.getMeshByName("square_" + index);
+        
+        const label = new BABYLON.GUI.TextBlock();
+        label.text = square.text;
+        label.color = "white";
+        label.fontSize = 14;
+        
+        // 四角い枠で囲む
+        const rect = new BABYLON.GUI.Rectangle();
+        rect.width = "100px";
+        rect.height = "40px";
+        rect.color = "black";
+        rect.thickness = 1;
+        rect.background = "rgba(0, 0, 0, 0.5)";
+        rect.addControl(label);
+        
+        advancedTexture.addControl(rect);
+        rect.linkWithMesh(box);
+        rect.linkOffsetY = -50; // マスから少し上にずらす
+      });
+
+      // 2. 画面左上にプレイヤー情報を表示するパネル
+      const panel = new BABYLON.GUI.StackPanel();
+      panel.width = "300px";
+      panel.isVertical = true;
+      panel.horizontalAlignment = BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_LEFT;
+      panel.verticalAlignment = BABYLON.GUI.Control.VERTICAL_ALIGNMENT_TOP;
+      panel.top = "10px";
+      panel.left = "10px";
+      advancedTexture.addControl(panel);
+
+      const titleLabel = new BABYLON.GUI.TextBlock();
+      titleLabel.text = "【プレイヤー情報】";
+      titleLabel.color = "black";
+      titleLabel.height = "30px";
+      titleLabel.fontSize = 18;
+      panel.addControl(titleLabel);
+
+      players.forEach((player) => {
+        const playerLabel = new BABYLON.GUI.TextBlock();
+        let status = player.is_goal ? "(ゴール)" : "";
+        playerLabel.text = `${player.name}: ${player.position}マス目 ${status}`;
+        playerLabel.color = "black";
+        playerLabel.height = "25px";
+        playerLabel.textHorizontalAlignment = BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_LEFT;
+        panel.addControl(playerLabel);
+      });
+
+      return scene;
+    };
+
+    const scene = createScene();
+
+    engine.runRenderLoop(function () {
+      scene.render();
+    });
+
+    window.addEventListener("resize", function () {
+      engine.resize();
+    });
+  }
+
+  // 初回読み込み用
+  document.addEventListener("DOMContentLoaded", init3DMap);
+  // RailsのTurbo遷移用
+  document.addEventListener("turbo:load", init3DMap);
+</script>
