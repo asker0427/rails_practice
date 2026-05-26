@@ -1,0 +1,17 @@
+<h1>すごろくスタート：エントリー</h1>
+<p><%= @game.title %></p>
+
+<% if flash[:notice] %>
+  <div style="color: red; margin-bottom: 20px;"><%= flash[:notice] %></div>
+<% end %>
+
+<%= form_with url: start_game_path(@game), method: :post, local: true do |form| %>
+  <p>プレイヤー名を入力してください（最大4人まで）：</p>
+  <% 4.times do |i| %>
+    <div>
+      プレイヤー<%= i + 1 %>: <%= form.text_field "player_names[]" %>
+    </div>
+  <% end %>
+  <br>
+  <%= form.submit "ゲーム開始！" %>
+<% end %>
